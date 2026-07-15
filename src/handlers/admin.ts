@@ -123,11 +123,12 @@ composer.callbackQuery(/^admin:toggle:(.+)$/, async (ctx) => {
   const serviceId = ctx.match[1];
   const store = getDataStore(ctx.api);
   const services = await getServices(store);
-  const service = services.find(s => s.id === serviceId);
-  if (service) {
-    service.active = !service.active;
-    await store.set("glowe:services", services);
-    await ctx.answerCallbackQuery({ text: `${service.title} ${service.active ? "enabled" : "disabled"}` });
+  const idx = services.findIndex(s => s.id === serviceId);
+  if (idx >= 0) {
+    const updated = { ...services[idx], active: !services[idx].active };
+    const newServices = [...services.slice(0, idx), updated, ...services.slice(idx + 1)];
+    await store.set("glowe:services", newServices);
+    await ctx.answerCallbackQuery({ text: `${updated.title} ${updated.active ? "enabled" : "disabled"}` });
   }
 
   const { text, keyboard } = await renderServiceManagement(store);
