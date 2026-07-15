@@ -3,17 +3,15 @@
     "name": "Browse Services",
     "steps": [
       {
+        "send": { "callback": "services:list" },
         "expect": [
           {
             "method": "sendMessage",
             "payload": {
-              "text": "View available beauty treatments with booking options"
+              "text": "Choose a treatment to see details and book:\n\nHaircut — 45min · $45\nHair Color — 90min · $85\nBlowout — 30min · $35\nManicure — 30min · $25\nPedicure — 45min · $40"
             }
           }
-        ],
-        "send": {
-          "callback": "services:list"
-        }
+        ]
       }
     ]
   }

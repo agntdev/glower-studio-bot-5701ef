@@ -1,17 +1,50 @@
 import { Composer } from "grammy";
+import type { Ctx } from "../bot.js";
+import { registerMainMenuItem, inlineButton, inlineKeyboard } from "../toolkit/index.js";
 
-// SCAFFOLD — generated from the bot blueprint BEFORE the agent runs.
-// Keep a LIVE registration (.command / .callbackQuery / …) so this feature is
-// never an empty stub. Replace the reply body with real logic + copy; if you
-// change the user-facing text, update tests/specs to match EXACTLY.
-// Do NOT rewrite src/bot.ts — buildBot() already auto-loads this module.
-// Menu: wire this into /start via registerMainMenuItem({ label: "My Bookings", data: "bookings:history" }) if the toolkit exposes it.
+interface BookingRecord {
+  serviceId: string;
+  serviceName: string;
+  date: string;
+  time: string;
+  status: "confirmed" | "completed" | "cancelled";
+}
 
-const composer = new Composer();
+function getBookings(session: { bookingHistory?: Array<{ serviceId: string; serviceName: string; date: string; time: string; status: string }> }) {
+  return session.bookingHistory ?? [];
+}
+
+function renderBookingHistory(bookings: Array<{ serviceId: string; serviceName: string; date: string; time: string; status: string }>): string {
+  if (bookings.length === 0) {
+    return "No bookings yet — tap 💅 Services to browse and book your first appointment.";
+  }
+
+  const lines: string[] = ["Your bookings:", ""];
+  for (const b of bookings) {
+    const statusEmoji = b.status === "confirmed" ? "🟢" : b.status === "completed" ? "✅" : "🔴";
+    lines.push(`${statusEmoji} ${b.serviceName} — ${b.date} at ${b.time}`);
+  }
+  return lines.join("\n");
+}
+
+registerMainMenuItem({ label: "📋 My Bookings", data: "bookings:history", order: 30 });
+
+const composer = new Composer<Ctx>();
 
 composer.callbackQuery("bookings:history", async (ctx) => {
   await ctx.answerCallbackQuery();
-  await ctx.reply("View past and scheduled appointments");
+  const bookings = getBookings(ctx.session);
+  const text = renderBookingHistory(bookings);
+  const keyboard = bookings.length > 0
+    ? inlineKeyboard([
+        [inlineButton("⬅️ Back to menu", "menu:main")],
+      ])
+    : inlineKeyboard([
+        [inlineButton("💅 Browse services", "services:list")],
+        [inlineButton("⬅️ Back to menu", "menu:main")],
+      ]);
+
+  await ctx.reply(text, { reply_markup: keyboard });
 });
 
 export default composer;
