@@ -3,17 +3,15 @@
     "name": "Leave Review",
     "steps": [
       {
+        "send": { "callback": "reviews:submit" },
         "expect": [
           {
             "method": "sendMessage",
             "payload": {
-              "text": "Submit review with rating and photos (post-appointment only)"
+              "text": "You need to have a completed appointment before leaving a review. Book your first service below!"
             }
           }
-        ],
-        "send": {
-          "callback": "reviews:submit"
-        }
+        ]
       }
     ]
   }
