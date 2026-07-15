@@ -1,20 +1,9 @@
 import { Composer } from "grammy";
 import type { Ctx } from "../bot.js";
 import { registerMainMenuItem, inlineButton, inlineKeyboard } from "../toolkit/index.js";
+import { getDataStore, getReviews, addReview, type ReviewData } from "../data-store.js";
 
-interface Review {
-  id: string;
-  rating: number;
-  text: string;
-  photos: string[];
-  bookingRef: string;
-  adminReply?: string;
-  createdAt: string;
-}
-
-const REVIEWS: Review[] = [];
-
-function getCompletedBookings(session: { bookingHistory?: Array<{ serviceId: string; date: string; time: string; status: string }> }): Array<{ serviceId: string; date: string; time: string; status: string }> {
+function getCompletedBookings(session: { bookingHistory?: Array<{ serviceId: string; serviceName: string; date: string; time: string; status: string }> }): Array<{ serviceId: string; serviceName: string; date: string; time: string; status: string }> {
   return (session.bookingHistory ?? []).filter(b => b.status === "completed" || b.status === "confirmed");
 }
 
@@ -109,8 +98,6 @@ composer.on("message:text", async (ctx, next) => {
 composer.on("message:photo", async (ctx) => {
   if (ctx.session.reviewStep !== "photos") return;
 
-  // Store photo file_id (in real app, would save to storage)
-  // For now, just acknowledge and let user add more or skip
   await ctx.reply("Photo received! Add more photos or tap Submit when ready.", {
     reply_markup: inlineKeyboard([
       [inlineButton("Submit review", "review:submit")],
@@ -148,18 +135,20 @@ composer.callbackQuery("review:submit", async (ctx) => {
   const completed = getCompletedBookings(ctx.session);
   const lastBooking = completed[completed.length - 1];
 
-  const review: Review = {
+  const store = getDataStore(ctx.api);
+  const review: ReviewData = {
     id: `rev_${Date.now()}`,
     rating: reviewRating ?? 5,
     text: reviewText ?? "",
     photos: [],
     bookingRef: lastBooking ? `${lastBooking.serviceId}_${lastBooking.date}` : "",
+    userId: ctx.from?.id ?? 0,
+    userName: ctx.from?.first_name ?? "Unknown",
     createdAt: new Date().toISOString(),
   };
 
-  REVIEWS.push(review);
+  await addReview(store, review);
 
-  // Reset flow state
   ctx.session.reviewStep = "idle";
   ctx.session.reviewRating = undefined;
   ctx.session.reviewText = undefined;

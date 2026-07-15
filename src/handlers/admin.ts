@@ -1,32 +1,9 @@
 import { Composer } from "grammy";
 import type { Ctx } from "../bot.js";
 import { inlineButton, inlineKeyboard } from "../toolkit/index.js";
+import { getDataStore, getServices, getReviews, updateReview, type ServiceData } from "../data-store.js";
 
 const ADMIN_IDS = process.env.ADMIN_IDS?.split(",").map(id => parseInt(id.trim(), 10)) ?? [];
-
-interface Service {
-  id: string;
-  title: string;
-  description: string;
-  duration: number;
-  price: number;
-  active: boolean;
-}
-
-const SERVICES: Service[] = [
-  { id: "haircut", title: "Haircut", description: "Classic cut and style", duration: 45, price: 45, active: true },
-  { id: "color", title: "Hair Color", description: "Full color or highlights", duration: 90, price: 85, active: true },
-  { id: "blowout", title: "Blowout", description: "Wash and blow dry styling", duration: 30, price: 35, active: true },
-  { id: "manicure", title: "Manicure", description: "Classic nail care and polish", duration: 30, price: 25, active: true },
-  { id: "pedicure", title: "Pedicure", description: "Foot care and nail polish", duration: 45, price: 40, active: true },
-  { id: "gel_nails", title: "Gel Nails", description: "Long-lasting gel polish application", duration: 45, price: 40, active: true },
-  { id: "facial", title: "Facial", description: "Deep cleansing and moisturizing", duration: 60, price: 65, active: true },
-  { id: "chemical_peel", title: "Chemical Peel", description: "Exfoliating skin treatment", duration: 45, price: 95, active: true },
-  { id: "lash_extensions", title: "Lash Extensions", description: "Individual lash application", duration: 90, price: 120, active: true },
-  { id: "lash_lift", title: "Lash Lift", description: "Semi-permanent lash curling", duration: 60, price: 75, active: true },
-  { id: "waxing", title: "Waxing", description: "Full body or facial waxing", duration: 30, price: 30, active: true },
-  { id: "makeup", title: "Makeup Application", description: "Professional makeup for any occasion", duration: 60, price: 75, active: true },
-];
 
 function isAdmin(userId: number): boolean {
   return ADMIN_IDS.length === 0 || ADMIN_IDS.includes(userId);
@@ -49,15 +26,16 @@ function renderAdminMenu(): { text: string; keyboard: ReturnType<typeof inlineKe
   return { text, keyboard };
 }
 
-function renderServiceManagement(): { text: string; keyboard: ReturnType<typeof inlineKeyboard> } {
+async function renderServiceManagement(store: ReturnType<typeof getDataStore>): Promise<{ text: string; keyboard: ReturnType<typeof inlineKeyboard> }> {
+  const services = await getServices(store);
   const lines = ["Service Management:", ""];
-  for (const s of SERVICES) {
+  for (const s of services) {
     const status = s.active ? "✅" : "❌";
     lines.push(`${status} ${s.title} — ${s.duration}min · $${s.price}`);
   }
 
-  const rows = SERVICES.map(s => [
-    inlineButton(`${s.active ? "❌" : "✅"} ${s.title}`, `admin:toggle:${s.id}`),
+  const rows = services.map(s => [
+    inlineButton(`${s.active ? "❌ Disable" : "✅ Enable"} ${s.title}`, `admin:toggle:${s.id}`),
   ]);
 
   const keyboard = inlineKeyboard([
@@ -68,18 +46,38 @@ function renderServiceManagement(): { text: string; keyboard: ReturnType<typeof 
   return { text: lines.join("\n"), keyboard };
 }
 
-function renderReviewManagement(): { text: string; keyboard: ReturnType<typeof inlineKeyboard> } {
-  const text = [
-    "Review Management:",
-    "",
-    "No new reviews to respond to.",
-  ].join("\n");
+async function renderReviewManagement(store: ReturnType<typeof getDataStore>): Promise<{ text: string; keyboard: ReturnType<typeof inlineKeyboard> }> {
+  const reviews = await getReviews(store);
+  const unreplied = reviews.filter(r => !r.adminReply);
+
+  if (unreplied.length === 0) {
+    return {
+      text: [
+        "Review Management:",
+        "",
+        "No new reviews to respond to.",
+      ].join("\n"),
+      keyboard: inlineKeyboard([
+        [inlineButton("⬅️ Back to admin", "admin:menu")],
+      ]),
+    };
+  }
+
+  const lines = ["Review Management:", ""];
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  for (const r of unreplied.slice(0, 10)) {
+    const stars = "⭐".repeat(r.rating);
+    lines.push(`${stars} — ${r.userName}: ${r.text || "(no text)"}`);
+    rows.push([inlineButton(`Reply to ${r.userName}`, `admin:reply:${r.id}`)]);
+  }
 
   const keyboard = inlineKeyboard([
+    ...rows,
     [inlineButton("⬅️ Back to admin", "admin:menu")],
   ]);
 
-  return { text, keyboard };
+  return { text: lines.join("\n"), keyboard };
 }
 
 const composer = new Composer<Ctx>();
@@ -110,7 +108,8 @@ composer.callbackQuery("admin:services", async (ctx) => {
     await ctx.reply("Access denied.");
     return;
   }
-  const { text, keyboard } = renderServiceManagement();
+  const store = getDataStore(ctx.api);
+  const { text, keyboard } = await renderServiceManagement(store);
   await ctx.editMessageText(text, { reply_markup: keyboard });
 });
 
@@ -122,13 +121,16 @@ composer.callbackQuery(/^admin:toggle:(.+)$/, async (ctx) => {
   }
 
   const serviceId = ctx.match[1];
-  const service = SERVICES.find(s => s.id === serviceId);
+  const store = getDataStore(ctx.api);
+  const services = await getServices(store);
+  const service = services.find(s => s.id === serviceId);
   if (service) {
     service.active = !service.active;
+    await store.set("glowe:services", services);
     await ctx.answerCallbackQuery({ text: `${service.title} ${service.active ? "enabled" : "disabled"}` });
   }
 
-  const { text, keyboard } = renderServiceManagement();
+  const { text, keyboard } = await renderServiceManagement(store);
   await ctx.editMessageText(text, { reply_markup: keyboard });
 });
 
@@ -172,8 +174,43 @@ composer.callbackQuery("admin:reviews", async (ctx) => {
     await ctx.reply("Access denied.");
     return;
   }
-  const { text, keyboard } = renderReviewManagement();
+  const store = getDataStore(ctx.api);
+  const { text, keyboard } = await renderReviewManagement(store);
   await ctx.editMessageText(text, { reply_markup: keyboard });
+});
+
+composer.callbackQuery(/^admin:reply:(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  if (!isAdmin(ctx.from?.id ?? 0)) {
+    await ctx.reply("Access denied.");
+    return;
+  }
+
+  const reviewId = ctx.match[1];
+  ctx.session.adminStep = "responding_review";
+  ctx.session.adminReviewId = reviewId;
+
+  await ctx.reply("Type your reply to this review:", {
+    reply_markup: { force_reply: true, input_field_placeholder: "Type your reply…" },
+  });
+});
+
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.adminStep !== "responding_review" || !ctx.session.adminReviewId) return next();
+  if (!isAdmin(ctx.from?.id ?? 0)) return next();
+
+  const replyText = ctx.message.text.trim();
+  const store = getDataStore(ctx.api);
+  await updateReview(store, ctx.session.adminReviewId, { adminReply: replyText });
+
+  ctx.session.adminStep = "idle";
+  ctx.session.adminReviewId = undefined;
+
+  await ctx.reply("✅ Reply saved. The review author will be notified.", {
+    reply_markup: inlineKeyboard([
+      [inlineButton("⬅️ Back to admin", "admin:menu")],
+    ]),
+  });
 });
 
 export default composer;
