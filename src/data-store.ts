@@ -99,7 +99,7 @@ export const DEFAULT_PORTFOLIO: PortfolioData[] = [
 export async function getServices(store: DataStore): Promise<ServiceData[]> {
   let services = await store.get<ServiceData[]>(SERVICES_KEY);
   if (!services) {
-    services = DEFAULT_SERVICES;
+    services = DEFAULT_SERVICES.map((s) => ({ ...s }));
     await store.set(SERVICES_KEY, services);
   }
   return services;
