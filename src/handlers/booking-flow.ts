@@ -1,31 +1,9 @@
 import { Composer } from "grammy";
 import type { Ctx } from "../bot.js";
 import { inlineButton, inlineKeyboard, confirmKeyboard } from "../toolkit/index.js";
-
-interface Service {
-  id: string;
-  title: string;
-  duration: number;
-  price: number;
-}
-
-const SERVICES: Service[] = [
-  { id: "haircut", title: "Haircut", duration: 45, price: 45 },
-  { id: "color", title: "Hair Color", duration: 90, price: 85 },
-  { id: "blowout", title: "Blowout", duration: 30, price: 35 },
-  { id: "manicure", title: "Manicure", duration: 30, price: 25 },
-  { id: "pedicure", title: "Pedicure", duration: 45, price: 40 },
-  { id: "gel_nails", title: "Gel Nails", duration: 45, price: 40 },
-  { id: "facial", title: "Facial", duration: 60, price: 65 },
-  { id: "chemical_peel", title: "Chemical Peel", duration: 45, price: 95 },
-  { id: "lash_extensions", title: "Lash Extensions", duration: 90, price: 120 },
-  { id: "lash_lift", title: "Lash Lift", duration: 60, price: 75 },
-  { id: "waxing", title: "Waxing", duration: 30, price: 30 },
-  { id: "makeup", title: "Makeup Application", duration: 60, price: 75 },
-];
+import { getDataStore, getServices, type ServiceData } from "../data-store.js";
 
 const STUDIO_HOURS = { open: 9, close: 18 };
-const SLOTS_PER_HOUR = 4; // 15-min increments
 
 function now(): Date {
   return new Date();
@@ -37,7 +15,7 @@ function generateDates(count: number): string[] {
   for (let i = 0; i < count; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    if (d.getDay() !== 0) { // Skip Sundays
+    if (d.getDay() !== 0) {
       dates.push(d.toISOString().split("T")[0]);
     }
   }
@@ -112,8 +90,71 @@ function renderTimeSlots(serviceId: string, date: string): { text: string; keybo
   return { text, keyboard };
 }
 
-function getServiceById(id: string): Service | undefined {
-  return SERVICES.find(s => s.id === id);
+async function completeBooking(ctx: Ctx): Promise<void> {
+  const { bookingServiceId, bookingServiceName, bookingDate, bookingTime, bookingDuration, bookingPrice, bookingPhone } = ctx.session;
+  if (!bookingServiceId || !bookingServiceName || !bookingDate || !bookingTime) {
+    await ctx.reply("Something went wrong. Please start over.", {
+      reply_markup: inlineKeyboard([
+        [inlineButton("⬅️ Back to menu", "menu:main")],
+      ]),
+    });
+    return;
+  }
+
+  if (!ctx.session.bookingHistory) {
+    ctx.session.bookingHistory = [];
+  }
+  ctx.session.bookingHistory.push({
+    serviceId: bookingServiceId,
+    serviceName: bookingServiceName,
+    date: bookingDate,
+    time: bookingTime,
+    status: "confirmed",
+    phone: bookingPhone,
+  });
+
+  ctx.session.bookingStep = "idle";
+  ctx.session.bookingPhone = undefined;
+
+  const confirmationText = [
+    "✅ Booking confirmed!",
+    "",
+    `Service: ${bookingServiceName}`,
+    `Date: ${formatDate(bookingDate)}`,
+    `Time: ${bookingTime}`,
+    "",
+    "We'll send you a reminder before your appointment.",
+  ].join("\n");
+
+  await ctx.editMessageText(confirmationText, {
+    reply_markup: inlineKeyboard([
+      [inlineButton("📋 My Bookings", "bookings:history")],
+      [inlineButton("⬅️ Back to menu", "menu:main")],
+    ]),
+  });
+
+  // Notify staff group chat (best-effort)
+  const staffGroupId = process.env.STAFF_GROUP_CHAT_ID;
+  if (staffGroupId) {
+    try {
+      const clientName = ctx.from?.first_name ?? "Unknown";
+      const phoneLine = bookingPhone ? `\nPhone: ${bookingPhone}` : "";
+      await ctx.api.sendMessage(
+        parseInt(staffGroupId, 10),
+        [
+          "📅 New booking!",
+          "",
+          `Service: ${bookingServiceName}`,
+          `Date: ${formatDate(bookingDate)}`,
+          `Time: ${bookingTime}`,
+          `Duration: ${bookingDuration ?? "?"} min`,
+          `Client: ${clientName}${phoneLine}`,
+        ].join("\n"),
+      );
+    } catch (err) {
+      console.error("Failed to notify staff group:", err);
+    }
+  }
 }
 
 const composer = new Composer<Ctx>();
@@ -121,8 +162,10 @@ const composer = new Composer<Ctx>();
 composer.callbackQuery(/^services:book:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const serviceId = ctx.match[1];
-  const service = getServiceById(serviceId);
-  if (!service) {
+  const store = getDataStore(ctx.api);
+  const services = await getServices(store);
+  const service = services.find(s => s.id === serviceId);
+  if (!service || !service.active) {
     await ctx.reply("Sorry, that service isn't available. Try another one?", {
       reply_markup: inlineKeyboard([
         [inlineButton("💅 Browse services", "services:list")],
@@ -161,7 +204,7 @@ composer.callbackQuery(/^book:slot:(.+):(.+)$/, async (ctx) => {
   await ctx.editMessageText(text, { reply_markup: keyboard });
 });
 
-composer.callbackQuery(/^book:confirm:(.+):(.+):(.+)$/, async (ctx) => {
+composer.callbackQuery(/^book:confirm:(.+?):(.+?):(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const serviceId = ctx.match[1];
   const date = ctx.match[2];
@@ -170,7 +213,9 @@ composer.callbackQuery(/^book:confirm:(.+):(.+):(.+)$/, async (ctx) => {
   ctx.session.bookingStep = "confirming";
   ctx.session.bookingTime = time;
 
-  const service = getServiceById(serviceId);
+  const store = getDataStore(ctx.api);
+  const services = await getServices(store);
+  const service = services.find(s => s.id === serviceId);
   if (!service) {
     await ctx.reply("Sorry, something went wrong. Please try again.", {
       reply_markup: inlineKeyboard([
@@ -198,47 +243,17 @@ composer.callbackQuery(/^book:confirm:(.+):(.+):(.+)$/, async (ctx) => {
 composer.callbackQuery("book:final:yes", async (ctx) => {
   await ctx.answerCallbackQuery();
 
-  const { bookingServiceId, bookingServiceName, bookingDate, bookingTime, bookingDuration, bookingPrice } = ctx.session;
-  if (!bookingServiceId || !bookingServiceName || !bookingDate || !bookingTime) {
-    await ctx.reply("Something went wrong. Please start over.", {
+  ctx.session.bookingStep = "collecting_phone";
+
+  await ctx.editMessageText(
+    "What's your phone number? Type it below, or tap Skip to continue without sharing.",
+    {
       reply_markup: inlineKeyboard([
-        [inlineButton("⬅️ Back to menu", "menu:main")],
+        [inlineButton("Skip", "book:skip:phone")],
+        [inlineButton("Cancel", "book:cancel")],
       ]),
-    });
-    return;
-  }
-
-  // Store booking in session
-  if (!ctx.session.bookingHistory) {
-    ctx.session.bookingHistory = [];
-  }
-  ctx.session.bookingHistory.push({
-    serviceId: bookingServiceId,
-    serviceName: bookingServiceName,
-    date: bookingDate,
-    time: bookingTime,
-    status: "confirmed",
-  });
-
-  // Reset flow state
-  ctx.session.bookingStep = "idle";
-
-  const text = [
-    "✅ Booking confirmed!",
-    "",
-    `Service: ${bookingServiceName}`,
-    `Date: ${formatDate(bookingDate)}`,
-    `Time: ${bookingTime}`,
-    "",
-    "We'll send you a reminder before your appointment.",
-  ].join("\n");
-
-  await ctx.editMessageText(text, {
-    reply_markup: inlineKeyboard([
-      [inlineButton("📋 My Bookings", "bookings:history")],
-      [inlineButton("⬅️ Back to menu", "menu:main")],
-    ]),
-  });
+    },
+  );
 });
 
 composer.callbackQuery("book:final:no", async (ctx) => {
@@ -251,6 +266,25 @@ composer.callbackQuery("book:final:no", async (ctx) => {
       [inlineButton("⬅️ Back to menu", "menu:main")],
     ]),
   });
+});
+
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.bookingStep !== "collecting_phone") return next();
+
+  const text = ctx.message.text.trim();
+  if (text.length < 3) {
+    await ctx.reply("That doesn't look like a valid phone number. Try again, or tap Skip.");
+    return;
+  }
+
+  ctx.session.bookingPhone = text;
+  await completeBooking(ctx);
+});
+
+composer.callbackQuery("book:skip:phone", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.bookingPhone = undefined;
+  await completeBooking(ctx);
 });
 
 composer.callbackQuery("book:cancel", async (ctx) => {

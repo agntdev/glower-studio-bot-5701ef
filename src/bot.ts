@@ -14,7 +14,8 @@ export interface Session {
   bookingTime?: string;
   bookingDuration?: number;
   bookingPrice?: number;
-  bookingHistory?: Array<{ serviceId: string; serviceName: string; date: string; time: string; status: string }>;
+  bookingPhone?: string;
+  bookingHistory?: Array<{ serviceId: string; serviceName: string; date: string; time: string; status: string; phone?: string }>;
 
   // Review flow state
   reviewStep?: "idle" | "rating" | "text" | "photos" | "confirming";
@@ -23,7 +24,8 @@ export interface Session {
   reviewText?: string;
 
   // Admin flow state
-  adminStep?: "idle" | "managing_services" | "managing_portfolio" | "managing_reviews";
+  adminStep?: "idle" | "managing_services" | "managing_portfolio" | "managing_reviews" | "responding_review";
+  adminReviewId?: string;
 
   // General
   step?: string;

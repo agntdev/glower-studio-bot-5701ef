@@ -1,6 +1,6 @@
 [
   {
-    "name": "Review flow after booking",
+    "name": "Full booking flow — select service, pick date, pick time, confirm, skip phone",
     "steps": [
       {
         "send": { "callback": "services:book:haircut" },
@@ -28,36 +28,6 @@
       },
       {
         "send": { "callback": "book:skip:phone" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "reviews:submit" },
-        "expect": [
-          { "method": "sendMessage" }
-        ]
-      },
-      {
-        "send": { "callback": "review:rate:5" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "review:skip:text" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "review:skip:photos" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "review:submit" },
         "expect": [
           { "method": "editMessageText" }
         ]
@@ -65,22 +35,22 @@
     ]
   },
   {
-    "name": "Review with text",
+    "name": "Full booking flow with phone number",
     "steps": [
       {
-        "send": { "callback": "services:book:haircut" },
+        "send": { "callback": "services:book:manicure" },
         "expect": [
           { "method": "sendMessage" }
         ]
       },
       {
-        "send": { "callback": "book:slot:haircut:2026-07-15" },
+        "send": { "callback": "book:slot:manicure:2026-07-16" },
         "expect": [
           { "method": "editMessageText" }
         ]
       },
       {
-        "send": { "callback": "book:confirm:haircut:2026-07-15:10:00" },
+        "send": { "callback": "book:confirm:manicure:2026-07-16:14:00" },
         "expect": [
           { "method": "editMessageText" }
         ]
@@ -92,37 +62,7 @@
         ]
       },
       {
-        "send": { "callback": "book:skip:phone" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "reviews:submit" },
-        "expect": [
-          { "method": "sendMessage" }
-        ]
-      },
-      {
-        "send": { "callback": "review:rate:4" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "text": "Great service, very professional!" },
-        "expect": [
-          { "method": "sendMessage" }
-        ]
-      },
-      {
-        "send": { "callback": "review:skip:photos" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "review:submit" },
+        "send": { "text": "+1-555-0123" },
         "expect": [
           { "method": "editMessageText" }
         ]
@@ -130,7 +70,64 @@
     ]
   },
   {
-    "name": "Review cancelled",
+    "name": "Booking cancelled at confirmation",
+    "steps": [
+      {
+        "send": { "callback": "services:book:facial" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "book:slot:facial:2026-07-15" },
+        "expect": [
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "book:confirm:facial:2026-07-15:11:00" },
+        "expect": [
+          { "method": "editMessageText" }
+        ]
+      },
+      {
+        "send": { "callback": "book:final:no" },
+        "expect": [
+          { "method": "editMessageText" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Booking cancelled from date picker",
+    "steps": [
+      {
+        "send": { "callback": "services:book:haircut" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      },
+      {
+        "send": { "callback": "book:cancel" },
+        "expect": [
+          { "method": "editMessageText" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Booking flow shows unavailable service",
+    "steps": [
+      {
+        "send": { "callback": "services:book:nonexistent" },
+        "expect": [
+          { "method": "sendMessage" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Booking then viewing in My Bookings",
     "steps": [
       {
         "send": { "callback": "services:book:haircut" },
@@ -163,21 +160,9 @@
         ]
       },
       {
-        "send": { "callback": "reviews:submit" },
+        "send": { "callback": "bookings:history" },
         "expect": [
           { "method": "sendMessage" }
-        ]
-      },
-      {
-        "send": { "callback": "review:rate:3" },
-        "expect": [
-          { "method": "editMessageText" }
-        ]
-      },
-      {
-        "send": { "callback": "review:cancel" },
-        "expect": [
-          { "method": "editMessageText" }
         ]
       }
     ]
